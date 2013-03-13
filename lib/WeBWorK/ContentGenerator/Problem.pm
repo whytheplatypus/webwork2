@@ -262,9 +262,9 @@ sub attemptResults {
 		$answerMessage =~ s/\n/<BR>/g;
 		$numCorrect += $answerScore >= 1;
 		$numBlanks++ unless $studentAnswer =~/\S/ || $answerScore >= 1;   # unless student answer contains entry
-		my $resultString = $answerScore >= 1 ? CGI::span({class=>"ResultsWithoutError"}, $r->maketext("Correct")) :
+		my $resultString = $answerScore >= 1 ? CGI::span({class=>"ResultsWithoutError"}, $r->maketext("correct")) :
 		                   $answerScore > 0  ? $r->maketext("[_1]% correct", int($answerScore*100)) :
-                                                       CGI::span({class=>"ResultsWithError"}, $r->maketext("Incorrect"));
+                                                       CGI::span({class=>"ResultsWithError"}, $r->maketext("incorrect"));
 		$fully = $r->maketext("completely") if $answerScore >0 and $answerScore < 1;
 		
 		push @correct_ids,   $name if $answerScore == 1;
@@ -472,6 +472,13 @@ sub previewCorrectAnswer {
 # Template escape implementations
 ################################################################################
 
+sub content {
+  my $self = shift;
+  my $result = $self->SUPER::content(@_);
+  $self->{pg}->free if $self->{pg};   # be sure to clean up PG environment when the page is done
+  return $result;
+}
+
 sub pre_header_initialize {
 	my ($self) = @_;
 	my $r = $self->r;
@@ -601,7 +608,7 @@ sub pre_header_initialize {
 			$problem->problem_seed($problemSeed);
 		}
 
-		my $visiblityStateClass = ($set->visible) ? $r->maketext("Visible") : $r->maketext("Hidden");
+		my $visiblityStateClass = ($set->visible) ? $r->maketext("visible") : $r->maketext("hidden");
 		my $visiblityStateText = ($set->visible) ? $r->maketext("visible to students")."." : $r->maketext("hidden from students").".";
 		$self->addmessage(CGI::span($r->maketext("This set is [_1]", CGI::font({class=>$visiblityStateClass}, $visiblityStateText))));
 
@@ -723,19 +730,6 @@ sub pre_header_initialize {
 			effectivePermissionLevel => $db->getPermissionLevel($effectiveUserName)->permission,
 		},
 	);
-	# sometimes, for example if the file can't be read, $pg->{pgcore} won't be defined
-	# because the PG file is never run
-	#
-	if (defined ($pg->{pgcore}) ) {
-		my $debug_msg = CGI::br().join( CGI::br(), @{ $pg->{pgcore}->get_debug_messages});
-		$self->addmessage($debug_msg ) if $debug_msg;
-		$self->{pgdebug}          = $pg->{pgcore}->get_debug_messages;
-		$self->{pgwarning}        = $pg->{pgcore}->get_warning_messages;
-		$self->{pginternalerrors} = $pg->{pgcore}->get_internal_debug_messages ;
-		$self->{pgerrors} = @{$self->{pgdebug}} || @{$self->{pgwarning}} || @{$self->{pginternalerrors}}||0;
-	} else {
-		$self->{pgerrors}=undef;  # unable to obtain errors
-	}
 
 	debug("end pg processing");
 	
@@ -745,6 +739,20 @@ sub pre_header_initialize {
 	                    &&= $pg->{flags}->{showHintLimit}<=$pg->{state}->{num_of_incorrect_ans};
 	$can{showSolutions} &&= $pg->{flags}->{solutionExists};
 	
+	##### record errors #########
+	if (ref ($pg->{pgcore}) )  {
+		my @debug_messages     = @{$pg->{pgcore}->get_debug_messages};
+		my @warning_messages   = @{$pg->{pgcore}->get_warning_messages};
+		my @internal_errors    = @{$pg->{pgcore}->get_internal_debug_messages};
+		$self->{pgerrors}      = @debug_messages||@warning_messages||@internal_errors;  # is 1 if any of these are non-empty
+		$self->{pgdebug}       =    \@debug_messages;
+		$self->{pgwarning}     =    \@warning_messages;
+		$self->{pginternalerrors} = \@internal_errors ;
+	} else {
+		warn "Processing of this PG problem was not completed.  Probably because of a syntax error.
+		      The translator died prematurely and no PG warning messages were transmitted.";
+	}
+
 	##### store fields #####
 	
 	$self->{want} = \%want;
@@ -753,6 +761,7 @@ sub pre_header_initialize {
 	$self->{will} = \%will;
 	$self->{pg} = $pg;
 }
+
 sub warnings {
 	my $self = shift;
 	# print "entering warnings() subroutine internal messages = ", $self->{pgerrors},CGI::br();
@@ -779,19 +788,19 @@ sub warnings {
 	} 
 	# print "proceeding to SUPER::warnings";
 	$self->SUPER::warnings();
-	"";
+	#  print $self->{pgerrors};
+	"";  #FIXME -- let's see if this is the appropriate output.
 }
 
-### #FIXME  not clear this is ever used
-# sub if_errors($$) {
-# 	my ($self, $arg) = @_;
-# 	
-# 	if ($self->{isOpen}) {
-# 		return $self->{pg}->{flags}->{error_flag} ? $arg : !$arg;
-# 	} else {
-# 		return !$arg;
-# 	}
-# }
+sub if_errors($$) {
+	my ($self, $arg) = @_;
+	
+	if ($self->{isOpen}) {
+		return $self->{pg}->{flags}->{error_flag} ? $arg : !$arg;
+	} else {
+		return !$arg;
+	}
+}
 
 sub head {
 	my ($self) = @_;
@@ -806,6 +815,11 @@ sub head {
 	if ($ce->{achievementsEnabled}) {
 	    print "<link rel=\"stylesheet\" type=\"text/css\" href=\"$ce->{webworkURLs}->{htdocs}/css/achievements.css\"/>";	
 	}
+        # Javascript and style for knowls
+        print qq{
+           <script type="text/javascript" src="$webwork_htdocs_url/js/jquery-1.7.1.min.js"></script> 
+           <link href="$webwork_htdocs_url/css/knowlstyle.css" rel="stylesheet" type="text/css" />
+           <script type="text/javascript" src="$webwork_htdocs_url/js/knowl.js"></script>};
 
 	return $self->{pg}->{head_text} if $self->{pg}->{head_text};
 
@@ -951,9 +965,11 @@ sub body {
 	my $set = $self->{set};
 	my $problem = $self->{problem};
 	my $pg = $self->{pg};
+
 	print CGI::p("Entering Problem::body subroutine.  
 	         This indicates an old style system.template file -- consider upgrading. ",
 	         caller(1), );
+
 	my $valid = WeBWorK::ContentGenerator::ProblemUtil::ProblemUtil::check_invalid($self);
 	unless($valid eq "valid"){
 		return $valid;
@@ -1063,6 +1079,7 @@ sub output_editorLink{
 	# add edit link for set as well.
 	my $editorLink = "";
 	my $editorLink2 = "";
+	my $editorLink3 = "";
 	# if we are here without a real homework set, carry that through
 	my $forced_field = [];
 	$forced_field = ['sourceFilePath' =>  $r->param("sourceFilePath")] if
@@ -1071,30 +1088,34 @@ sub output_editorLink{
 		my $editorPage = $urlpath->newFromModule("WeBWorK::ContentGenerator::Instructor::PGProblemEditor", $r, 
 			courseID => $courseName, setID => $set->set_id, problemID => $problem->problem_id);
 		my $editorURL = $self->systemLink($editorPage, params=>$forced_field);
-		$editorLink = CGI::p(CGI::a({href=>$editorURL,target =>'WW_Editor'}, $r->maketext("Edit this problem")));
+		$editorLink = CGI::span(CGI::a({href=>$editorURL,target =>'WW_Editor1'}, $r->maketext("Edit1")));
 	}
 	if ($authz->hasPermissions($user, "modify_problem_sets") and $ce->{showeditors}->{pgproblemeditor2}) {
 		my $editorPage = $urlpath->newFromModule("WeBWorK::ContentGenerator::Instructor::PGProblemEditor2", $r, 
 			courseID => $courseName, setID => $set->set_id, problemID => $problem->problem_id);
 		my $editorURL = $self->systemLink($editorPage, params=>$forced_field);
-		$editorLink2 = CGI::p(CGI::a({href=>$editorURL,target =>'WW_Editor2'}, $r->maketext("Edit this problem with new editor")));
+		$editorLink2 = CGI::span(CGI::a({href=>$editorURL,target =>'WW_Editor2'}, $r->maketext("Edit2")));
+	}
+	if ($authz->hasPermissions($user, "modify_problem_sets") and $ce->{showeditors}->{pgproblemeditor3}) {
+		my $editorPage = $urlpath->newFromModule("WeBWorK::ContentGenerator::Instructor::PGProblemEditor3", $r, 
+			courseID => $courseName, setID => $set->set_id, problemID => $problem->problem_id);
+		my $editorURL = $self->systemLink($editorPage, params=>$forced_field);
+		$editorLink3 = CGI::span(CGI::a({href=>$editorURL,target =>'WW_Editor3'}, $r->maketext("Edit3")));
 	}
 	##### translation errors? #####
 
 	if ($pg->{flags}->{error_flag}) {
 		if ($authz->hasPermissions($user, "view_problem_debugging_info")) {
-		    print "Call errorOutput</br>";
 			print $self->errorOutput($pg->{errors}, $pg->{body_text});
-			print $editorLink;
-			print $editorLink2;
+
+			print $editorLink, " ", $editorLink2, " ", $editorLink3;
 		} else {
 			print $self->errorOutput($pg->{errors}, $r->maketext("You do not have permission to view the details of this error."));
 		}
 		print "";
 	}
 	else{
-		print $editorLink;
-		print $editorLink2;
+		print $editorLink, " ", $editorLink2, " ", $editorLink3;
 	}
 	return "";
 }
@@ -1128,6 +1149,7 @@ sub output_checkboxes{
 		),"&nbsp;";
 	}
 	if ($can{showHints}) {
+
 		print WeBWorK::CGI_labeled_input(
 				-type	 => "checkbox",
 				-id		 => "showHints_id",
@@ -1143,8 +1165,6 @@ sub output_checkboxes{
 					-name    => "showHints",
 					-value   => 1,
 				}
-
-
 		),"&nbsp;";
 	}
 	if ($can{showSolutions}) {
@@ -1221,6 +1241,8 @@ sub output_score_summary{
 	my $submitAnswers = $self->{submitAnswers};
 
 	# score summary
+	warn "num_correct =", $problem->num_correct,"num_incorrect=",$problem->num_incorrect 
+	        unless defined($problem->num_correct) and defined($problem->num_incorrect) ;
 	my $attempts = $problem->num_correct + $problem->num_incorrect;
 	#my $attemptsNoun = $attempts != 1 ? $r->maketext("times") : $r->maketext("time");
 	my $problem_status    = $problem->status || 0;
@@ -1246,6 +1268,7 @@ sub output_score_summary{
 	#		$setClosedMessage .= " Additional attempts will not be recorded.";
 	#	}
 	#}
+
 	unless (defined( $pg->{state}->{state_summary_msg}) and $pg->{state}->{state_summary_msg}=~/\S/) {
 		my $notCountedMessage = ($problem->value) ? "" : $r->maketext("(This problem will not count towards your grade.)");
 		print CGI::p(join("",
@@ -1375,6 +1398,7 @@ sub output_summary{
 	# do I need to check $will{showCorrectAnswers} to make preflight work??
 
 	if (defined($pg->{flags}->{showPartialCorrectAnswers}) and ($pg->{flags}->{showPartialCorrectAnswers} >= 0 and $submitAnswers) ) {
+
 		# print this if user submitted answers OR requested correct answers	    
 	    my $results = $self->attemptResults($pg, 1,
 			$will{showCorrectAnswers},
@@ -1431,6 +1455,9 @@ sub output_custom_edit_message{
 	
 	return "";
 }
+
+
+
 
 # output_past_answer_button
 
@@ -1558,6 +1585,9 @@ sub output_JS{
 	my $ce = $r->ce;
 
 	my $site_url = $ce->{webworkURLs}->{htdocs};
+
+	# This adds the dragmath functionality
+	print CGI::start_script({type=>"text/javascript", src=>"$site_url/js/dragmath.js"}), CGI::end_script();
 	
 	# This file declares a function called addOnLoadEvent which allows multiple different scripts to add to a single onLoadEvent handler on a page.
 	print CGI::start_script({type=>"text/javascript", src=>"$site_url/js/addOnLoadEvent.js"}), CGI::end_script();
