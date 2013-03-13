@@ -1,6 +1,8 @@
 #!/user/bin/perl -w
 
-
+# initialize SOAP interface as well
+use WebworkSOAP;
+use WebworkSOAP::WSDL;
 
 BEGIN {
     $main::VERSION = "2.4.9";
@@ -440,7 +442,7 @@ sub listUsers{
 #	"studentid": 87492466, 
 #	"userpassword": "password",	# defaults to studentid if empty
 #								# if studentid also empty, then no password
-#	"permission": "professor",	# valid values from %userRoles in global.conf
+#	"permission": "professor",	# valid values from %userRoles in defaults.config
 #								# defaults to student if empty
 #}
 # This user will be added to courseID
@@ -468,6 +470,22 @@ sub dropUser {
 
 # Expecting a hash $in composed of
 #{
+#	'userID' => 'admin',		# these are the usual 
+#	'password' => 'admin',		# auth credentials
+#	'courseID' => 'Math',		# used to initiate a
+#	'session_key' => 'key',		# session.
+#	"id": "BFYM942", 
+#}
+sub deleteUser {
+	my $class = shift;
+	my $in = shift;
+	my $self = $class->initiate_session($in);
+	return $self->do(WebworkWebservice::CourseActions::deleteUser($self, $in));
+}
+
+
+# Expecting a hash $in composed of
+#{
 #	'userID' => 'admin',		# these are the usual
 #	'password' => 'admin',		# auth credentials
 #	'courseID' => 'Math',		# used to initiate a
@@ -478,7 +496,7 @@ sub dropUser {
 #	"id": "The Doctor",			# required
 #	"email": "doctor@tardis",
 #
-#	"permission": "professor",	# valid values from %userRoles in global.conf
+#	"permission": "professor",	# valid values from %userRoles in defaults.config
 #								# defaults to student if empty
 #   status: 'Enrolled, audit, proctor, drop
 #   section
@@ -507,6 +525,27 @@ sub changeUserPassword{
     my $self = $class->initiate_session($in);
     return $self->do(WebworkWebservice::CourseActions::changeUserPassword($self, $in));
 }
+
+# Expecting a hash $in composed of
+#{
+#	'userID' => 'admin',		# these are the usual
+#	'password' => 'admin',		# auth credentials
+#	'courseID' => 'Math',		# used to initiate a
+#	'session_key' => 'key',		# session.
+#	"studentid": 87492466,
+#	"effectiveUser": "eUser"
+#}
+
+
+
+sub sendEmail{
+    my $class = shift;
+    my $in = shift;
+    my $self = $class->initiate_session($in);
+    return $self->do(WebworkWebservice::CourseActions::sendEmail($self, $in));
+}
+
+
 
 # -- SOAP::Lite -- guide.soaplite.com -- Copyright (C) 2001 Paul Kulchenko --
 # test responses
